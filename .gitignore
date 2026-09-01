@@ -5,3 +5,4 @@
 .env
 *.p8
 *.pem
+outputs/

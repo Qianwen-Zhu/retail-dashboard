@@ -19,7 +19,7 @@ SPEC.loader.exec_module(module)
 
 
 class FinanceMonthTests(unittest.TestCase):
-    columns = ["PERIOD", "CATEGORY", "CHANNEL", "SPEND"]
+    columns = ["PERIOD", "CATEGORY", "CHANNEL", "MDF_SPLIT", "SPEND"]
 
     def test_english_month_labels_are_compared_chronologically(self):
         self.assertEqual(module.parse_period_month("MAY 2026"), date(2026, 5, 1))
@@ -33,11 +33,14 @@ class FinanceMonthTests(unittest.TestCase):
     def test_same_month_leaves_file_untouched(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "Marketing_Spend_2026YTD.csv"
-            original = b"\xef\xbb\xbfPERIOD,CATEGORY,CHANNEL,SPEND\r\nMay 2026,Promos,Walmart,10\r\n"
+            original = (
+                b"\xef\xbb\xbfPERIOD,CATEGORY,CHANNEL,MDF_SPLIT,SPEND\r\n"
+                b"May 2026,Promos,Walmart,N/A - Promos,10\r\n"
+            )
             path.write_bytes(original)
             changed = module.refresh_finance_if_new_month(
                 self.columns,
-                [("May 2026", "Promos", "Walmart", Decimal("99.00"))],
+                [("May 2026", "Promos", "Walmart", "N/A - Promos", Decimal("99.00"))],
                 path,
             )
             self.assertFalse(changed)
@@ -47,12 +50,13 @@ class FinanceMonthTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "Marketing_Spend_2026YTD.csv"
             path.write_text(
-                "PERIOD,CATEGORY,CHANNEL,SPEND\nMay 2026,Promos,Walmart,10\n",
+                "PERIOD,CATEGORY,CHANNEL,MDF_SPLIT,SPEND\n"
+                "May 2026,Promos,Walmart,N/A - Promos,10\n",
                 encoding="utf-8-sig",
             )
             rows = [
-                ("MAY 2026", "Promos", "Walmart", Decimal("10.00")),
-                ("JUN 2026", "Promos", "Walmart", Decimal("12.34")),
+                ("MAY 2026", "Promos", "Walmart", "N/A - Promos", Decimal("10.00")),
+                ("JUN 2026", "Other Mktg", "Amazon 1P", "MDF", Decimal("12.34")),
             ]
             changed = module.refresh_finance_if_new_month(self.columns, rows, path)
             self.assertTrue(changed)
@@ -61,6 +65,16 @@ class FinanceMonthTests(unittest.TestCase):
                 saved = list(csv.DictReader(handle))
             self.assertEqual(len(saved), 2)
             self.assertEqual(saved[-1]["SPEND"], "12.34")
+
+    def test_finance_result_requires_mdf_split(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "Marketing_Spend_2026YTD.csv"
+            with self.assertRaisesRegex(ValueError, "MDF_SPLIT"):
+                module.refresh_finance_if_new_month(
+                    ["PERIOD", "CATEGORY", "CHANNEL", "SPEND"],
+                    [("JUN 2026", "Promos", "Walmart", Decimal("12.34"))],
+                    path,
+                )
 
     def test_sql_loader_rejects_non_select(self):
         with tempfile.TemporaryDirectory() as temp_dir:

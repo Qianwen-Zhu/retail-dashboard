@@ -15,8 +15,9 @@ No virtual-environment activation is required. The command:
 
 1. Runs `sql/finance_actuals.sql`.
 2. Updates `inputs/finance/Marketing_Spend_2026YTD.csv` only when Snowflake
-   contains a newer month. If the latest month is unchanged, the file is not
-   touched.
+   contains a newer month. The Finance result includes Amazon's `MDF_SPLIT`
+   (`Non-MDF`, `MDF`, or `N/A - Promos`). If the latest month is unchanged,
+   the file is not touched.
 3. Runs `sql/weekly_retail_actuals.sql`.
 4. Uses a temporary weekly CSV while building, then removes it automatically.
 5. Saves the dated Excel and HTML files in `outputs/YYYY-MM-DD/`.
@@ -53,7 +54,6 @@ Retail Business Dashboard/
 ├── sql/
 │   ├── weekly_retail_actuals.sql
 │   ├── finance_actuals.sql
-│   └── grant_retail_dashboard_read_role.sql
 │
 ├── scripts/
 │   └── build_outputs.py          CSV → Excel + HTML builder
@@ -90,8 +90,10 @@ The read-only role queries only these two views:
 
 It needs `USAGE` on `SALES_WH`, `DATA_MART`, and
 `DATA_MART.RETAIL_DASHBOARD`, plus `SELECT` on those two views. It does not
-need permissions on the underlying source tables. The exact grant script is
-`sql/grant_retail_dashboard_read_role.sql`.
+need permissions on the underlying source tables.
+
+The Finance view must return these five columns in this order-independent
+schema: `PERIOD`, `CATEGORY`, `CHANNEL`, `MDF_SPLIT`, `SPEND`.
 
 ## What may be replaced
 
@@ -104,7 +106,7 @@ need permissions on the underlying source tables. The exact grant script is
   expected worksheet layout.
 - `inputs/finance/Marketing_Spend_2026YTD.csv`: normally maintained
   automatically. Manual replacement is allowed only when the Snowflake result
-  contains a newer month.
+  contains a newer month. Preserve the five-column schema above.
 
 Do not edit files inside `outputs/` and then treat them as templates. Each run
 starts from `inputs/Dashboard_Template.xlsx`.
@@ -133,6 +135,8 @@ Before sharing the weekly output:
 
 - Confirm the highlighted week is the latest complete Mon–Sun week.
 - Confirm all retail sections are present.
+- In the Amazon section, confirm `Total Marketing = Non-MDF + MDF` for both
+  Finance Actuals and Budgeted values.
 - Compare the latest Excel and HTML with the prior week for obvious anomalies.
 - Do not rename input files unless their paths are also changed in
   `scripts/build_outputs.py`.

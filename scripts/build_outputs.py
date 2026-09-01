@@ -14,7 +14,7 @@ The script:
   3. Populates the Excel template (inputs/Dashboard_Template.xlsx),
      adding hardcoded per-channel values + formulas for Total Retail SUMs,
      % of Target, % of Total Retail YTD, Amazon Ads (On-site + DSP), and
-     % of budget (this week + YTD) rows.
+     % of budget (month + QTD + YTD) rows.
   4. Adds a "Finance Monthly Actuals" placeholder sheet.
   5. Renders an HTML dashboard with sticky headers, color-coded %, and notes.
 
@@ -78,11 +78,11 @@ SUM_FIELDS = [
 # Amazon NC block (R43-47) intentionally NOT simplified — fill actual (R43) + 52%
 # target (R47) only; ratio rows R44/45/46 stay blank.
 CH_ROWS = {
-    'Amazon':      {'si_a': 29,  'si_t': 33,  'si_pct': 31,  'st_a': 35,  'st_t': 39,  'st_pct': 37,  'st_cam': 40,  'st_nc': 41,  'nc_a': 43,  'nc_t': 47, 'promo': 49, 'ads_on': 63, 'ads_dsp': 66, 'ads_tot': 69},
-    'Walmart':     {'si_a': 77,  'si_t': 81,  'si_pct': 79,  'st_a': 83,  'st_t': 87,  'st_pct': 85,  'st_cam': 88,  'st_nc': 89,  'promo': 91,  'ads_tot': 105},
-    'Home Depot':  {'si_a': 113, 'si_t': 117, 'si_pct': 115, 'st_a': 119, 'st_t': 123, 'st_pct': 121, 'st_cam': 124, 'st_nc': 125, 'promo': 127, 'ads_tot': 141},
-    'Other Omni':  {'si_a': 149, 'si_t': 153, 'si_pct': 151, 'st_a': 155, 'st_t': 159, 'st_pct': 157, 'st_cam': 160, 'st_nc': 161, 'promo': 163},
-    'TikTok Shop': {'si_a': 179, 'si_t': 183, 'si_pct': 181, 'st_a': 185, 'st_t': 189, 'st_pct': 187, 'st_cam': 190, 'st_nc': 191, 'promo': 193, 'ads_tot': 207},
+    'Amazon':      {'si_a': 29,  'si_t': 33,  'si_pct': 31,  'st_a': 35,  'st_t': 39,  'st_pct': 37,  'st_cam': 40,  'st_nc': 41,  'nc_a': 43,  'nc_t': 47, 'promo': 49, 'ads_on': 77, 'ads_dsp': 80, 'ads_tot': 83},
+    'Walmart':     {'si_a': 91,  'si_t': 95,  'si_pct': 93,  'st_a': 97,  'st_t': 101, 'st_pct': 99,  'st_cam': 102, 'st_nc': 103, 'promo': 105, 'ads_tot': 119},
+    'Home Depot':  {'si_a': 127, 'si_t': 131, 'si_pct': 129, 'st_a': 133, 'st_t': 137, 'st_pct': 135, 'st_cam': 138, 'st_nc': 139, 'promo': 141, 'ads_tot': 155},
+    'Other Omni':  {'si_a': 163, 'si_t': 167, 'si_pct': 165, 'st_a': 169, 'st_t': 173, 'st_pct': 171, 'st_cam': 174, 'st_nc': 175, 'promo': 177},
+    'TikTok Shop': {'si_a': 193, 'si_t': 197, 'si_pct': 195, 'st_a': 199, 'st_t': 203, 'st_pct': 201, 'st_cam': 204, 'st_nc': 205, 'promo': 207, 'ads_tot': 221},
 }
 
 # Total Retail rollup row positions. NC: nc_occ_ytd (R21 "% new customers - YTD" =
@@ -92,10 +92,10 @@ TR_ROWS = {'si_a': 8, 'si_t': 11, 'si_pct': 9, 'st_a': 13, 'st_t': 16, 'st_pct':
 # "% of Total - YTD" rows: (pct_row, channel_data_row, all_channels_denom_row)
 YTD_PCT_ROWS = [
     (30,  29,  3), (36,  35,  4),  # Amazon
-    (78,  77,  3), (84,  83,  4),  # Walmart
-    (114, 113, 3), (120, 119, 4),  # HD
-    (150, 149, 3), (156, 155, 4),  # Other Omni
-    (180, 179, 3), (186, 185, 4),  # TikTok Shop
+    (92,  91,  3), (98,  97,  4),  # Walmart
+    (128, 127, 3), (134, 133, 4),  # HD
+    (164, 163, 3), (170, 169, 4),  # Other Omni
+    (194, 193, 3), (200, 199, 4),  # TikTok Shop
 ]
 
 # "% of Target - YTD" rows (sell-in + sell-through only): (pct_ytd_row, actual, target).
@@ -103,59 +103,70 @@ YTD_PCT_ROWS = [
 TARGET_YTD_PCT_ROWS = [
     (10,  8,   11),  (15,  13,  16),    # Total Retail si / st
     (32,  29,  33),  (38,  35,  39),    # Amazon       si / st
-    (80,  77,  81),  (86,  83,  87),    # Walmart      si / st
-    (116, 113, 117), (122, 119, 123),   # Home Depot   si / st
-    (152, 149, 153), (158, 155, 159),   # Other Omni   si / st
-    (182, 179, 183), (188, 185, 189),   # TikTok Shop  si / st
+    (94,  91,  95),  (100, 97,  101),   # Walmart      si / st
+    (130, 127, 131), (136, 133, 137),   # Home Depot   si / st
+    (166, 163, 167), (172, 169, 173),   # Other Omni   si / st
+    (196, 193, 197), (202, 199, 203),   # TikTok Shop  si / st
 ]
 
-# Marketing blocks with a full "% of budget" group — Promo + Total Marketing only.
+# Marketing blocks with a full "% of budget" group — Promo + Total Marketing +
+# (2026-08-25) the Non-MDF / MDF split of Total Marketing, Amazon only.
 # 6-tuple (actual, finance, budget, pct_month, pct_qtd, pct_ytd); all 3 % use finance.
+# Non-MDF + MDF are a SECOND, independent breakdown of the same Total Marketing
+# total (the other being Ads + Other Marketing below) — not additive with it.
 MARKETING_BLOCKS = [
     (49,  50,  51,  52,  53,  54),    # Amazon Promo
     (56,  57,  58,  59,  60,  61),    # Amazon Total Marketing
-    (91,  92,  93,  94,  95,  96),    # Walmart Promo
-    (98,  99,  100, 101, 102, 103),   # Walmart Total Marketing
-    (127, 128, 129, 130, 131, 132),   # HD Promo
-    (134, 135, 136, 137, 138, 139),   # HD Total Marketing
-    (163, 164, 165, 166, 167, 168),   # Other Omni Promo
-    (170, 171, 172, 173, 174, 175),   # Other Omni Total marketing
-    (193, 194, 195, 196, 197, 198),   # TikTok Promo
-    (200, 201, 202, 203, 204, 205),   # TikTok Total marketing
+    (63,  64,  65,  66,  67,  68),    # Amazon Non-MDF   (2026-08-25, new)
+    (70,  71,  72,  73,  74,  75),    # Amazon MDF       (2026-08-25, new)
+    (105, 106, 107, 108, 109, 110),   # Walmart Promo
+    (112, 113, 114, 115, 116, 117),   # Walmart Total Marketing
+    (141, 142, 143, 144, 145, 146),   # HD Promo
+    (148, 149, 150, 151, 152, 153),   # HD Total Marketing
+    (177, 178, 179, 180, 181, 182),   # Other Omni Promo
+    (184, 185, 186, 187, 188, 189),   # Other Omni Total marketing
+    (207, 208, 209, 210, 211, 212),   # TikTok Promo
+    (214, 215, 216, 217, 218, 219),   # TikTok Total marketing
 ]
 
 # dash_row -> budgeted_monthly row. Promo + Total Marketing + 2-row Ads/Other details.
 PLAN_TARGETS = [
     # PROMO
     {'dash_row': 51,  'kind': 'promo',     'channel': 'Amazon 1P'},
-    {'dash_row': 93,  'kind': 'promo',     'channel': 'Walmart'},
-    {'dash_row': 129, 'kind': 'promo',     'channel': 'Home Depot'},
-    {'dash_row': 165, 'kind': 'promo',     'channel': 'Best Buy'},     # Other Omni
-    {'dash_row': 195, 'kind': 'promo',     'channel': 'TikTok Shop'},
+    {'dash_row': 107, 'kind': 'promo',     'channel': 'Walmart'},
+    {'dash_row': 143, 'kind': 'promo',     'channel': 'Home Depot'},
+    {'dash_row': 179, 'kind': 'promo',     'channel': 'Best Buy'},     # Other Omni
+    {'dash_row': 209, 'kind': 'promo',     'channel': 'TikTok Shop'},
     # TOTAL MARKETING (all ads + other-marketing buckets)
     {'dash_row': 58,  'kind': 'marketing', 'channel': 'Amazon 1P',  'buckets': ['Non-Brand - Sponsored Ads', 'Brand - Sponsored Ads', 'DSP', 'MDF', 'Influencer', 'Strategic Vendor Service - FTE', 'Prime Video Ads', 'Affiliate']},
-    {'dash_row': 100, 'kind': 'marketing', 'channel': 'Walmart',    'buckets': ['Ad Spend', 'In-Store Display', 'Content']},
-    {'dash_row': 136, 'kind': 'marketing', 'channel': 'Home Depot', 'buckets': ['Marketing package', 'In-Store Display', 'Events', 'Brand Advocate']},
-    {'dash_row': 172, 'kind': 'marketing_multi_channel', 'channels': ['Best Buy', 'Costco', 'Other Retail']},
-    {'dash_row': 202, 'kind': 'marketing', 'channel': 'TikTok Shop','buckets': ['Ad Spend', 'Affiliate Commisions', 'Free Samples', 'Livestreaming', 'Affiliate Maintenance and Tools', 'Video']},
-    # AMAZON detail
-    {'dash_row': 64,  'kind': 'marketing', 'channel': 'Amazon 1P',  'buckets': ['Non-Brand - Sponsored Ads', 'Brand - Sponsored Ads']},
-    {'dash_row': 67,  'kind': 'marketing', 'channel': 'Amazon 1P',  'buckets': ['DSP']},
-    {'dash_row': 70,  'kind': 'marketing', 'channel': 'Amazon 1P',  'buckets': ['Non-Brand - Sponsored Ads', 'Brand - Sponsored Ads', 'DSP']},
-    {'dash_row': 73,  'kind': 'marketing', 'channel': 'Amazon 1P',  'buckets': ['MDF', 'Influencer', 'Strategic Vendor Service - FTE', 'Prime Video Ads', 'Affiliate']},
+    {'dash_row': 114, 'kind': 'marketing', 'channel': 'Walmart',    'buckets': ['Ad Spend', 'In-Store Display', 'Content']},
+    {'dash_row': 150, 'kind': 'marketing', 'channel': 'Home Depot', 'buckets': ['Marketing package', 'In-Store Display', 'Events', 'Brand Advocate']},
+    {'dash_row': 186, 'kind': 'marketing_multi_channel', 'channels': ['Best Buy', 'Costco', 'Other Retail']},
+    {'dash_row': 216, 'kind': 'marketing', 'channel': 'TikTok Shop','buckets': ['Ad Spend', 'Affiliate Commisions', 'Free Samples', 'Livestreaming', 'Affiliate Maintenance and Tools', 'Video']},
+    # AMAZON — Non-MDF / MDF split of Total Marketing (2026-08-25, new).
+    # Budget-side MDF is a real, distinct bucket in the FY26 Marketing Tracker
+    # (not derived) — Non-MDF is simply Total Marketing's 7 other buckets.
+    {'dash_row': 65,  'kind': 'marketing', 'channel': 'Amazon 1P',  'buckets': ['Non-Brand - Sponsored Ads', 'Brand - Sponsored Ads', 'DSP', 'Influencer', 'Strategic Vendor Service - FTE', 'Prime Video Ads', 'Affiliate']},
+    {'dash_row': 72,  'kind': 'marketing', 'channel': 'Amazon 1P',  'buckets': ['MDF']},
+    # AMAZON detail (Ads / Other Marketing — unchanged breakdown, Other Marketing
+    # still includes the 'MDF' bucket alongside it; two independent cuts, see above)
+    {'dash_row': 78,  'kind': 'marketing', 'channel': 'Amazon 1P',  'buckets': ['Non-Brand - Sponsored Ads', 'Brand - Sponsored Ads']},
+    {'dash_row': 81,  'kind': 'marketing', 'channel': 'Amazon 1P',  'buckets': ['DSP']},
+    {'dash_row': 84,  'kind': 'marketing', 'channel': 'Amazon 1P',  'buckets': ['Non-Brand - Sponsored Ads', 'Brand - Sponsored Ads', 'DSP']},
+    {'dash_row': 87,  'kind': 'marketing', 'channel': 'Amazon 1P',  'buckets': ['MDF', 'Influencer', 'Strategic Vendor Service - FTE', 'Prime Video Ads', 'Affiliate']},
     # WALMART detail
-    {'dash_row': 106, 'kind': 'marketing', 'channel': 'Walmart',    'buckets': ['Ad Spend']},
-    {'dash_row': 109, 'kind': 'marketing', 'channel': 'Walmart',    'buckets': ['In-Store Display', 'Content']},
+    {'dash_row': 120, 'kind': 'marketing', 'channel': 'Walmart',    'buckets': ['Ad Spend']},
+    {'dash_row': 123, 'kind': 'marketing', 'channel': 'Walmart',    'buckets': ['In-Store Display', 'Content']},
     # HD detail
-    {'dash_row': 142, 'kind': 'marketing', 'channel': 'Home Depot', 'buckets': ['Marketing package']},
-    {'dash_row': 145, 'kind': 'marketing', 'channel': 'Home Depot', 'buckets': ['In-Store Display', 'Events', 'Brand Advocate']},
+    {'dash_row': 156, 'kind': 'marketing', 'channel': 'Home Depot', 'buckets': ['Marketing package']},
+    {'dash_row': 159, 'kind': 'marketing', 'channel': 'Home Depot', 'buckets': ['In-Store Display', 'Events', 'Brand Advocate']},
     # TIKTOK detail
-    {'dash_row': 208, 'kind': 'marketing', 'channel': 'TikTok Shop','buckets': ['Ad Spend']},
-    {'dash_row': 211, 'kind': 'marketing', 'channel': 'TikTok Shop','buckets': ['Affiliate Commisions', 'Free Samples', 'Livestreaming', 'Affiliate Maintenance and Tools', 'Video']},
+    {'dash_row': 222, 'kind': 'marketing', 'channel': 'TikTok Shop','buckets': ['Ad Spend']},
+    {'dash_row': 225, 'kind': 'marketing', 'channel': 'TikTok Shop','buckets': ['Affiliate Commisions', 'Free Samples', 'Livestreaming', 'Affiliate Maintenance and Tools', 'Video']},
 ]
 
 # Other Marketing detail rows (2-row blocks) — gray-fill removal safety net.
-OTHER_MARKETING_GRAY_ROWS = [72, 73, 108, 109, 144, 145, 210, 211]
+OTHER_MARKETING_GRAY_ROWS = [86, 87, 122, 123, 158, 159, 224, 225]
 
 # New-Customers target = flat 52% (constant). Total Retail R23, Amazon R47.
 NC_TARGET_PCT = 0.52
@@ -165,10 +176,10 @@ NC_TARGET_ROWS = [23, 47]
 # Finance Actuals rows now live inline in the Dashboard sheet, one per metric.)
 
 # ── Finance Actuals (Monthly) source: inputs/finance/Marketing_Spend_2026YTD.csv ──
-# Monthly NetSuite GL spend, Wyze Labs US (Sub2) only. Pulled from
-# DATA_MART.FINANCE.NETSUITE_CPAM_DETAILS and pre-aggregated in Snowflake to a
-# LONG table: PERIOD, CATEGORY, CHANNEL, SPEND (see finance_actuals.sql for the
-# exact query). Refreshed ~monthly — replace the CSV in place (no date in name).
+# Monthly NetSuite GL spend exposed by
+# DATA_MART.RETAIL_DASHBOARD.MARKETING_SPEND_YTD as a long table:
+# PERIOD, CATEGORY, CHANNEL, MDF_SPLIT, SPEND. The local finance_actuals.sql is
+# a read-only wrapper around that view. Refreshed ~monthly in place.
 # Replaces the old wide 'Channel × Category' xlsx.
 #
 # 3 categories (Discounts excluded in the query — never folded into Promo):
@@ -194,22 +205,34 @@ MONTH_ABBR = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
 # Total Marketing finance row (apply_finance_actuals ACCUMULATES, so they sum) —
 # this sidesteps the Amazon-ads-booked-as-6102 classification problem entirely.
 # Detail Ads / Other Marketing finance rows are intentionally left blank.
+#
+# 2026-08-25: Amazon MDF has no separate GL account — accounting tags it via
+# memo ("paid through AVC account balance") on acct 6102 (Other Mktg). The CSV
+# now carries a 4th column MDF_SPLIT ('Non-MDF' / 'MDF' / 'N/A - Promos');
+# load_finance_actuals() additionally keys those rows by the 3-tuple
+# (channel, category, mdf_split) WITHOUT changing the existing 2-tuple keys
+# above (Non-MDF + MDF still roll up into the same Total Marketing total —
+# see the 3 entries below). Non-MDF = Advertising's Non-MDF slice (all of it,
+# MDF never hits 6601) + Other Mktg's Non-MDF slice.
 FINANCE_ROW_MAP = {
     ('Amazon 1P',    'Promos'):      50,    # Amazon → Promo
     ('Amazon 1P',    'Advertising'): 57,    # Amazon → Total Marketing (Adv + Other summed)
     ('Amazon 1P',    'Other Mktg'):  57,    # Amazon → Total Marketing
-    ('Walmart',      'Promos'):      92,    # Walmart → Promo
-    ('Walmart',      'Advertising'): 99 ,   # Walmart → Total Marketing
-    ('Walmart',      'Other Mktg'):  99 ,   # Walmart → Total Marketing
-    ('Home Depot',   'Promos'):      128,   # Home Depot → Promo
-    ('Home Depot',   'Advertising'): 135,   # Home Depot → Total Marketing
-    ('Home Depot',   'Other Mktg'):  135,   # Home Depot → Total Marketing
-    ('Other Retail', 'Promos'):      164,   # Other Omni → Promo
-    ('Other Retail', 'Advertising'): 171,   # Other Omni → Total marketing
-    ('Other Retail', 'Other Mktg'):  171,   # Other Omni → Total marketing
-    ('TTS',          'Promos'):      194,   # TikTok Shop → Promo
-    ('TTS',          'Advertising'): 201,   # TikTok Shop → Total marketing
-    ('TTS',          'Other Mktg'):  201,   # TikTok Shop → Total marketing
+    ('Amazon 1P', 'Advertising', 'Non-MDF'): 64,   # Amazon → Non-MDF (2026-08-25)
+    ('Amazon 1P', 'Other Mktg',  'Non-MDF'): 64,   # Amazon → Non-MDF (2026-08-25)
+    ('Amazon 1P', 'Other Mktg',  'MDF'):     71,   # Amazon → MDF     (2026-08-25)
+    ('Walmart',      'Promos'):      106,   # Walmart → Promo
+    ('Walmart',      'Advertising'): 113,   # Walmart → Total Marketing
+    ('Walmart',      'Other Mktg'):  113,   # Walmart → Total Marketing
+    ('Home Depot',   'Promos'):      142,   # Home Depot → Promo
+    ('Home Depot',   'Advertising'): 149,   # Home Depot → Total Marketing
+    ('Home Depot',   'Other Mktg'):  149,   # Home Depot → Total Marketing
+    ('Other Retail', 'Promos'):      178,   # Other Omni → Promo
+    ('Other Retail', 'Advertising'): 185,   # Other Omni → Total marketing
+    ('Other Retail', 'Other Mktg'):  185,   # Other Omni → Total marketing
+    ('TTS',          'Promos'):      208,   # TikTok Shop → Promo
+    ('TTS',          'Advertising'): 215,   # TikTok Shop → Total marketing
+    ('TTS',          'Other Mktg'):  215,   # TikTok Shop → Total marketing
 }
 
 # HTML equivalent: (dashboard_ch, metric_label) → (finance_channel, category).
@@ -397,14 +420,25 @@ def apply_plan_targets(ws, marketing_plan, promo_plan, max_col):
 
 
 def load_finance_actuals():
-    """Load Marketing_Spend_2026YTD.csv → {(channel, category): {(year,month): $}}.
+    """Load Marketing_Spend_2026YTD.csv → {key: {(year,month): $}}.
 
     Reads the LONG NetSuite-derived table: PERIOD ('Mon YYYY'), CATEGORY
     ('Promos'/'Advertising'/'Other Mktg'), CHANNEL ('Amazon 1P'/'Walmart'/
-    'Home Depot'/'Other Retail'/'TTS'), SPEND ($, Promo already positive,
-    Discounts already excluded — see finance_actuals.sql). CATEGORY + CHANNEL
-    map directly to FINANCE_ROW_MAP. Returns {} if the file is absent so the
-    build still runs.
+    'Home Depot'/'Other Retail'/'TTS'), MDF_SPLIT ('Non-MDF'/'MDF'/
+    'N/A - Promos', added 2026-08-25 — Amazon MDF has no separate GL account,
+    so finance_actuals.sql tags it via memo instead), SPEND ($, Promo already
+    positive, Discounts already excluded — see finance_actuals.sql).
+
+    Every row is aggregated under its plain (channel, category) 2-tuple key —
+    UNCHANGED behavior, MDF_SPLIT is invisible here, so Non-MDF + MDF still sum
+    back into the old Other-Mktg-only total (backward compatible with
+    FINANCE_ROW_MAP's existing 2-tuple entries / Total Marketing / HTML's
+    finance_total_mktg). Rows also get a SECOND, granular (channel, category,
+    mdf_split) 3-tuple key so the Non-MDF / MDF dashboard rows can be sourced
+    without disturbing the 2-tuple totals. Older CSVs without the MDF_SPLIT
+    column simply never populate the 3-tuple keys (loop below no-ops).
+
+    Returns {} if the file is absent so the build still runs.
     """
     if not FINANCE_ACTUALS_PATH.exists():
         print(f"  Finance actuals file not found ({FINANCE_ACTUALS_PATH.name}); skipping finance rows.")
@@ -416,6 +450,7 @@ def load_finance_actuals():
             period = (row.get('PERIOD') or '').strip()
             category = (row.get('CATEGORY') or '').strip()
             channel = (row.get('CHANNEL') or '').strip()
+            mdf_split = (row.get('MDF_SPLIT') or '').strip()
             amt = num(row.get('SPEND'))
             if not period or not category or not channel or amt is None:
                 continue
@@ -426,6 +461,9 @@ def load_finance_actuals():
                 continue
             d = result.setdefault((channel, category), {})
             d[ym] = d.get(ym, 0.0) + amt
+            if mdf_split and mdf_split != 'N/A - Promos':
+                dsplit = result.setdefault((channel, category, mdf_split), {})
+                dsplit[ym] = dsplit.get(ym, 0.0) + amt
     return result
 
 
@@ -435,10 +473,13 @@ def apply_finance_actuals(ws, finance_actuals, max_col):
 
     ACCUMULATES into each (row, col): multiple categories can map to the same row
     (Advertising + Other Mktg both → the channel's Total Marketing finance row),
-    so their dollars are summed, not overwritten."""
+    so their dollars are summed, not overwritten. FINANCE_ROW_MAP keys can be
+    either 2-tuples (channel, category) or 3-tuples (channel, category,
+    mdf_split) — passed straight through to finance_actuals.get(), so key
+    shape doesn't matter here (2026-08-25, Amazon Non-MDF/MDF split)."""
     acc = {}  # (dash_row, col) → $ summed
-    for (fch, cat), dash_row in FINANCE_ROW_MAP.items():
-        for (year, month), val in finance_actuals.get((fch, cat), {}).items():
+    for key, dash_row in FINANCE_ROW_MAP.items():
+        for (year, month), val in finance_actuals.get(key, {}).items():
             col = last_mon_of_month_col(year, month)
             if col is None or col > max_col + 30:
                 continue
@@ -759,7 +800,10 @@ def build_excel(data, dst_path, marketing_plan, promo_plan, finance_actuals=None
         "CAC tracker")
     st_target_note.width = 320
     st_target_note.height = 140
-    for r in (16, 40, 88, 124, 160, 190):   # sell-through Target row labels
+    # (2026-08-25: this list previously pointed at each channel's Cam-breakdown
+    # row, one below the real Target row, for all 4 non-Amazon/non-TR channels
+    # — fixed here while remapping rows for the Non-MDF/MDF insertion below.)
+    for r in (16, 39, 101, 137, 173, 203):   # sell-through Target row labels
         ws.cell(r, 2).comment = Comment(st_target_note.text, st_target_note.author,
                                         height=140, width=320)
 
@@ -910,6 +954,11 @@ def build_html(data, dst_path, snapshot_date, marketing_plan, promo_plan, financ
     PLAN_MAP = {
         ('Amazon',      'Promo'):                  ('promo',     'Amazon 1P', None),
         ('Amazon',      'Total Marketing'):        ('marketing_multi', ['Amazon 1P'], None),
+        # 2026-08-25: Non-MDF / MDF — a second, independent breakdown of the
+        # same Total Marketing total (the other being Ads + Other Marketing
+        # below). Non-MDF = Total Marketing's 7 buckets other than MDF.
+        ('Amazon',      'Non-MDF'):                 ('marketing', 'Amazon 1P', ['Non-Brand - Sponsored Ads', 'Brand - Sponsored Ads', 'DSP', 'Influencer', 'Strategic Vendor Service - FTE', 'Prime Video Ads', 'Affiliate']),
+        ('Amazon',      'MDF'):                     ('marketing', 'Amazon 1P', ['MDF']),
         ('Walmart',     'Total Marketing'):        ('marketing_multi', ['Walmart'], None),
         ('Home Depot',  'Total Marketing'):        ('marketing_multi', ['Home Depot'], None),
         ('TikTok Shop', 'Total Marketing'):        ('marketing_multi', ['TikTok Shop'], None),
@@ -989,6 +1038,22 @@ def build_html(data, dst_path, snapshot_date, marketing_plan, promo_plan, financ
         monthly = {}
         for cat in ('Advertising', 'Other Mktg'):
             for ym, v in (finance_actuals.get((fch, cat), {}) if fch else {}).items():
+                monthly[ym] = monthly.get(ym, 0) + v
+        out = []
+        for w in weeks:
+            sun = date.fromisoformat(w) + timedelta(days=6)
+            ym = (sun.year, sun.month)
+            out.append(fmt_k(monthly[ym]) if (last_mon_per_month.get(ym) == w and ym in monthly) else '')
+        return out
+
+    def finance_mdf_split(ch, split):
+        """Non-MDF or MDF finance (2026-08-25) — sums the 3-tuple granular keys
+        load_finance_actuals() writes alongside (channel, category). Amazon
+        only; other channels have no MDF_SPLIT data so this returns all ''."""
+        fch = FINANCE_CH.get(ch)
+        monthly = {}
+        for cat in ('Advertising', 'Other Mktg'):
+            for ym, v in (finance_actuals.get((fch, cat, split), {}) if fch else {}).items():
                 monthly[ym] = monthly.get(ym, 0) + v
         out = []
         for w in weeks:
@@ -1124,6 +1189,22 @@ def build_html(data, dst_path, snapshot_date, marketing_plan, promo_plan, financ
         if any(v != '' for v in tm_fin):
             add_row("Finance Actuals (Monthly)", "$k", tm_fin, kind='finance', indent=1)
         add_budget_only(ch, 'Total Marketing')
+
+        # Non-MDF / MDF (2026-08-25, Amazon only) — a SECOND, independent
+        # breakdown of the same Total Marketing total (the other being the
+        # Ads + Other Marketing detail below). Not additive with it — both
+        # cuts describe the same dollars from a different angle.
+        if ch == 'Amazon':
+            add_row("Non-MDF", "$k", blank_row, indent=1)
+            nm_fin = finance_mdf_split(ch, 'Non-MDF')
+            if any(v != '' for v in nm_fin):
+                add_row("Finance Actuals (Monthly)", "$k", nm_fin, kind='finance', indent=1)
+            add_budget_only(ch, 'Non-MDF')
+            add_row("MDF", "$k", blank_row, indent=1)
+            mdf_fin = finance_mdf_split(ch, 'MDF')
+            if any(v != '' for v in mdf_fin):
+                add_row("Finance Actuals (Monthly)", "$k", mdf_fin, kind='finance', indent=1)
+            add_budget_only(ch, 'MDF')
 
         if has_amazon_ads:
             add_row("Ads — On-site", "$k",

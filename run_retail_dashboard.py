@@ -35,7 +35,7 @@ BUILDER = ROOT / "scripts" / "build_outputs.py"
 FINANCE_CSV = ROOT / "inputs" / "finance" / "Marketing_Spend_2026YTD.csv"
 ENV_FILE = ROOT / ".env"
 
-FINANCE_COLUMNS = {"PERIOD", "CATEGORY", "CHANNEL", "SPEND"}
+FINANCE_COLUMNS = {"PERIOD", "CATEGORY", "CHANNEL", "MDF_SPLIT", "SPEND"}
 WEEKLY_REQUIRED_COLUMNS = {"WEEK_START", "DASHBOARD_CHANNEL"}
 
 

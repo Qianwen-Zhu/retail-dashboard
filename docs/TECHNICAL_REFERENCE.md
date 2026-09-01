@@ -97,7 +97,7 @@ the following pipeline sections:
 2. **Sell-through** — `TEST_FORECAST_SELL_THROUGH_PRODUCT_LINE` filtered to 2026 weeks, channel mapping, Cam/NonCam from `PRODUCT_GROUP`.
 3. **Promo (2026 only, inlined)** — five sub-blocks (HD / Walmart / BB / TTS / Amazon 1P), each builds `(week_start, sku, channel, promo_spend_usd)`. Walmart is special: pulls 1P units from Scintilla `OMNI_SALES` raw (same logic as `walmart_omni_base` in `wyze_sell_through.sql`), subchannels `'Walmart 1P Store'` + `'Walmart 1P Ecomm'`, promos expanded by CHANNEL rec IDs (`recyJpz5ObkkqwN3Z` → Store, `recb89H7psdHrEXoA` → Ecomm) so combined / online-only / store-only campaigns multiply only their applicable subchannel's units. **3P promo NOT added here** (deferred — sell-through includes 3P but promo stays 1P until confirmed).
 4. **Ads** — Amazon SP daily (1P + 3P UNION) → weekly; Amazon DSP TEMP shifted +1 day to Mon; TTS GMV Max daily → weekly. Pivoted by dashboard_channel into `ads_onsite_actual` / `ads_dsp_actual` / `ads_total_actual`.
-5. **New customers** — 4 CTEs chained (`nc_new_users` → `nc_user_nid` → `nc_first_bound_device` → `nc_classified`) mirroring `new_user_by_channel.sql`. Then 3 outputs: `new_users_total_weekly` (R5 All Channels), `retail_new_customers_weekly` (R18 non-Shopify with Cam/NonCam pivot, Unknown lumped into NonCam), `amazon_ntb_weekly` (R39 SB NTB orders, 1P only).
+5. **New customers** — 4 CTEs chained (`nc_new_users` → `nc_user_nid` → `nc_first_bound_device` → `nc_classified`) mirroring `new_user_by_channel.sql`. Then 3 outputs: `new_users_total_weekly` (R5 All Channels), `retail_new_customers_weekly` (R20 non-Shopify with Cam/NonCam pivot, Unknown lumped into NonCam), `amazon_ntb_weekly` (R43 SB+SD NTB orders, 1P only).
 6. **`per_channel` join** — `sell_in_metrics` FULL OUTER JOIN `sell_through_metrics` FULL OUTER JOIN `promo_metrics` FULL OUTER JOIN `ads_metrics` LEFT JOIN `amazon_ntb_weekly`. `new_customers_actual` populated only for Amazon row at this level. WHERE filter: `DATEADD('day', 6, week_start) < CURRENT_DATE`.
 7. **Rollup CTEs** — `total_retail` (filters per_channel to retail channels + LEFT JOIN `retail_new_customers_weekly` for `new_customers_actual` override) and `all_channels` (sums everything + LEFT JOIN `new_users_total_weekly`). Both use the same nested-subquery pattern so the new_customers SUM is replaced, not just added.
 8. **Final SELECT** — UNION ALL per_channel + total_retail + all_channels, ordered by week_start DESC then dashboard_channel.
@@ -106,7 +106,7 @@ the following pipeline sections:
 
 ## 3. Section-by-section explanation
 
-### 3.1 Sell-in (R3 / R8 / R27 / R71 / R100 / R129 / R153)
+### 3.1 Sell-in (R3 / R8 / R29 / R91 / R127 / R163 / R193)
 
 **What**: weekly gross revenue at the wholesale (shipment-to-retailer) layer.
 **Source**: `BUDGET_HW_WITH_ACTUALS_WEEKLY.GROSS_REV` (user-confirmed default; not `NET_REV` or `PRODUCT_PROFIT`).
@@ -115,7 +115,7 @@ the following pipeline sections:
 **Week convention**: ISO Mon-Sun. Year-boundary handled by `DATE_TRUNC('week', END_DATE)` (see §1.3).
 **Display**: dashboard values in $k (divide by 1000 in Excel).
 
-### 3.2 Sell-through units (R4 / R12 / R32 / R76 / R105 / R134 / R158)
+### 3.2 Sell-through units (R4 / R13 / R35 / R97 / R133 / R169 / R199)
 
 **What**: weekly units sold by the retailer to end customers (device-level, multi-pack expanded).
 **Source**: `TEST_FORECAST_SELL_THROUGH_PRODUCT_LINE.GROSS_SALES_UNITS`. The view is built on top of `WYZE_SELL_THROUGH_DATA` and **pre-multiplies SKU units by `DEVICE_UNIT_MULTIPLIER`** before aggregating to PRODUCT_LINE × CHANNEL × WEEK_START grain.
@@ -123,72 +123,87 @@ the following pipeline sections:
 **Target**: `TARGET_UNITS` from the same view (forecast joined in via FULL OUTER JOIN). Only matches at PRODUCT_LINE × CHANNEL × week level; non-matched sell-through rows have NULL target.
 **Cam/NonCam target**: derived similarly via PRODUCT_GROUP.
 
-### 3.3 New customers (R5 / R18 / R39 only)
+### 3.3 New customers (R5 / R20 / R43 only)
 
 **Three sources for three rows — NOT cross-row summable.**
 
 | Row | Source | Definition |
 |---|---|---|
 | **R5 All Channels** | `USER_ATTRIBUTES` filtered to first-binding events | `COUNT(DISTINCT USER_ID)` per week (company-wide, no channel) |
-| **R18 Total Retail** | Same source + acquisition_channel classification | `COUNT(DISTINCT USER_ID)` where `acquisition_channel = 'Other'` (i.e., not Shopify D2C); Cam/NonCam from first-bound device → `PRODUCT_MAPPING.PRODUCT_FAMILY`; Unknown bucket lumped into NonCam so Cam + NonCam = Total |
-| **R39 Amazon** | `SB_NTB_1P_US` + `SD_NTB_1P_US` | `SUM(ntb_purchases)` (SB + SD NTB orders, 1P only; Amazon 14-day click/view attribution). SP NTB not yet available. |
+| **R20 Total Retail** | Same source + acquisition_channel classification | `COUNT(DISTINCT USER_ID)` where `acquisition_channel = 'Other'` (i.e., not Shopify D2C); Cam/NonCam from first-bound device → `PRODUCT_MAPPING.PRODUCT_FAMILY`; Unknown bucket lumped into NonCam so Cam + NonCam = Total |
+| **R43 Amazon** | `SB_NTB_1P_US` + `SD_NTB_1P_US` | `SUM(ntb_purchases)` (SB + SD NTB orders, 1P only; Amazon 14-day click/view attribution). SP NTB not yet available. |
 
 **Implementation**: `nc_classified` CTE (mirrors `new_user_by_channel.sql` chain) builds per-user (week, channel, cam_flag). Aggregates feed into rollup CTEs which OVERRIDE the SUM(per_channel) — important because Amazon's NTB orders aren't summable with Total Retail's USER count.
 
-**Target (2026-06-29)**: New-Customers target is a flat **52%** (constant, unit %). `% of Target` rows are **percentage-points** = actual share − 52%. Total Retail: R22 = `R21 − R24` (R21 = NC ÷ sell-through units), R23 (YTD) = `ΣNC ÷ Σunits − 52%`. Amazon (R44–48) shows actual (SB+SD NTB) + 52% target only — its `As % of sales units` / `% of Target` / `% of Target - YTD` rows stay **blank** (NTB orders vs sell-through units = mixed denominator). Earlier "52% × sell-through units" target (2026-06-22) is superseded. Row numbers per section live in `build_outputs.py` constants (template is 212 rows as of 2026-06-29).
+**Target (2026-06-29)**: New-Customers target is a flat **52%** (constant, unit %). Total Retail R21 is cumulative NC ÷ sell-through units; R22 is `R21 − R23`, where R23 is the 52% target. Amazon (R43–47) shows actual (SB+SD NTB) + 52% target only — its `As % of sales units` / `% of Target` / `% of Target - YTD` rows stay **blank** (NTB orders vs sell-through units = mixed denominator). Earlier "52% × sell-through units" target is superseded. Current row numbers live in `scripts/build_outputs.py` (template is 225 rows).
 
-### 3.4 Promo per channel (R44 / R83 / R112 / R141 / R165)
+### 3.4 Promo per channel (R49 / R105 / R141 / R177 / R207)
 
-**Amazon promo (R44)**: based on Amazon 1P (Vendor Central) units × campaign discount.
+**Amazon promo (R49)**: based on Amazon 1P (Vendor Central) units × campaign discount.
 - ⚠ **Known limitation**: Amazon 3P (Seller Central) sell-through volumes NOT in promo calc. Promo from 3P campaigns × 3P units is missing. Same limitation that exists in CAC tracker. Reproduces existing behavior.
 
-**Walmart promo (R83)**: 1P (Store + Ecomm, **subchannel-aware**) + **3P** (added 2026-06-22). 1P units from Scintilla `OMNI_SALES` (≥ cutover) / manual backfill (< cutover, bucketed Ecomm); 3P units from `SRC_CLEAN.WALMART_3P.*` order-lines, riding the Ecomm (`recb89...`) campaigns (no 3P-specific rec ID). Toggle 3P off by removing `wmt_3p_weekly` / `wmt_3p_promo_26` from the `wmt_promo_spend` unions.
+**Walmart promo (R105)**: 1P (Store + Ecomm, **subchannel-aware**) + **3P** (added 2026-06-22). 1P units from Scintilla `OMNI_SALES` (≥ cutover) / manual backfill (< cutover, bucketed Ecomm); 3P units from `SRC_CLEAN.WALMART_3P.*` order-lines, riding the Ecomm (`recb89...`) campaigns (no 3P-specific rec ID). Toggle 3P off by removing `wmt_3p_weekly` / `wmt_3p_promo_26` from the `wmt_promo_spend` unions.
 - Promos with CHANNEL containing `recyJpz5ObkkqwN3Z` apply to Store units; `recb89H7psdHrEXoA` applies to Ecomm. Combined promos (both rec IDs) expand to two rows.
 - 2025 promos (table `_25`, plain-string CHANNEL) historically only used `recb89H7psdHrEXoA` → hardcoded to Ecomm.
 - WM-suffix CROSS JOIN preserved (some Walmart SKUs sell under both bare and `WYZECOPBWMT`-style suffix).
 
-**HD promo (R112)**: standard ALL_PROMOS_BY_CAMPAIGN_26 with `recFlcYMqRgq507TO` (in-store) or `recSQ7fMin1DdMliW` (online) rec IDs. Sell-through from raw `SPS.ACTIVITY_HOMEDEPOT` split by `SPS_LOCATION_ID`.
+**HD promo (R141)**: standard ALL_PROMOS_BY_CAMPAIGN_26 with `recFlcYMqRgq507TO` (in-store) or `recSQ7fMin1DdMliW` (online) rec IDs. Sell-through from raw `SPS.ACTIVITY_HOMEDEPOT` split by `SPS_LOCATION_ID`.
 
-**Other Omni promo (R141)**: only BB tracked. Costco / Other Retail / HD Canada have no campaign tracker rows.
+**Other Omni promo (R177)**: only BB tracked. Costco / Other Retail / HD Canada have no campaign tracker rows.
 
-**TikTok Shop promo (R165)**: order-line `seller_discount` from `tiktokorderlineitems`, both US and MX (no `_DATON_SOURCEVERSION_INTEGRATION_ID` filter as of 2026-06-01).
+**TikTok Shop promo (R207)**: order-line `seller_discount` from `tiktokorderlineitems`, both US and MX (no `_DATON_SOURCEVERSION_INTEGRATION_ID` filter as of 2026-06-01).
 
-### 3.5 Amazon Ads (R49 / R54 / R59)
+### 3.5 Amazon Ads (R77 / R80 / R83)
 
-- **R49 Ads — On-site**: SP 1P (`US_1P_AMAZON_ADS_SPONSORD_PRODUCTS_REPORT_CLEAN`) + SP 3P (`US_AMAZON_ADS_SPONSORD_PRODUCTS_REPORT_CLEAN`), unioned and aggregated to week. Amazon SP 1P starts Feb 2026; 3P starts Dec 2025.
-- **R54 Ads — DSP**: `AMAZON_DSP_ADS_TEMP` (manual upload, Sun-Sat → Mon shift +1 day). Coverage: ~13 LY weeks (2025-03 to 2025-05) + CY from late 2025 onwards.
-- **R59 Ads (On-site + DSP)**: Excel formula `=E49+E54` (per column). Recalculates automatically when R49 or R54 change.
+- **R77 Ads — On-site**: SP 1P (`US_1P_AMAZON_ADS_SPONSORD_PRODUCTS_REPORT_CLEAN`) + SP 3P (`US_AMAZON_ADS_SPONSORD_PRODUCTS_REPORT_CLEAN`), unioned and aggregated to week. Amazon SP 1P starts Feb 2026; 3P starts Dec 2025.
+- **R80 Ads — DSP**: `AMAZON_DSP_ADS_TEMP` (manual upload, Sun-Sat → Mon shift +1 day). Coverage: ~13 LY weeks (2025-03 to 2025-05) + CY from late 2025 onwards.
+- **R83 Ads (On-site + DSP)**: Excel formula `=E77+E80` (per column). Recalculates automatically when R77 or R80 change.
 
-### 3.6 TikTok Shop Ads (R170)
+### 3.5a Amazon Non-MDF / MDF
+
+Rows 63–68 and 70–75 provide a second, independent split of Amazon Total
+Marketing by funding source. They are not additive with the Ads/Other Marketing
+detail below them.
+
+- **Budget:** MDF uses the literal Amazon `MDF` bucket in the FY26 Marketing
+  Plan; Non-MDF is the other seven Amazon marketing buckets.
+- **Finance actuals:** the Finance view returns `MDF_SPLIT`. The builder keeps
+  the original `(channel, category)` totals for Total Marketing and also builds
+  `(channel, category, mdf_split)` keys for the new rows.
+- **Reconciliation:** Total Marketing must equal Non-MDF + MDF for both Finance
+  Actuals and Budgeted values. May 2026 has no MDF actual and is a valid gap.
+
+### 3.6 TikTok Shop Ads (R221)
 
 - TikTok US GMV Max from `tiktok_ads_us_test_gmv_max_campaign_daily`, excluding LIVE campaigns, deduplicated on `(campaign_id, stat_time_day)` via `daton_batch_runtime DESC`.
 
-### 3.7 Home Depot Ads (R127) / Walmart / Other Omni Ads
+### 3.7 Home Depot Ads (R155) / Walmart / Other Omni Ads
 
 - **Home Depot Ads — wired (2026-06-03).** `hd_ads_weekly` reads `DATA_MART.FINANCE.HD_ADS_DAILY` (Orange Access PLA + Banner onsite + Google PMAX offsite; manual upload, no API) → feeds the `Home Depot` ads row.
 - **Walmart Ads — wired (2026-06-22).** `walmart_ads_weekly` reads `DATA_MART.FINANCE.WALMART_ADS_DAILY` (`SUM(ad_spend)` by `report_date`, 1P+3P combined) → daily → Mon-Sun → feeds the `Walmart` ads (detail) row. **Other Omni Ads — still no weekly feed** (FY26 plan estimate only). (Detail Ads rows show actual + Budgeted only since 2026-06-29; `% of budget` lives on Promo + Total Marketing, finance-based.)
 
-### 3.8 Other Marketing (R69 / R101 / R133 / R159 / R191)
+### 3.8 Other Marketing (R86 / R122 / R158 / R186 / R224)
 
 - **No *weekly* actual feed.** Plan supplemental has the FY26 budget. Monthly Finance Actuals now populate the TikTok Shop Other Marketing row (see §3.9).
 - Includes things like: Amazon MDF, retail in-store displays, retail marketing packages, TTS commissions & samples, affiliate spend.
 
 ### 3.9 Finance Actuals (Monthly) — real GL spend (wired 2026-06-09, source → NetSuite CSV 2026-06-18)
 
-- **Source:** `inputs/finance/Marketing_Spend_2026YTD.csv` — a **long** table pulled through `DATA_MART.RETAIL_DASHBOARD.MARKETING_SPEND_YTD`, whose underlying source is `DATA_MART.FINANCE.NETSUITE_CPAM_DETAILS` (Wyze Labs US / Sub2). The local wrapper is `sql/finance_actuals.sql`. Refresh ~monthly: the root launcher queries the view and **replaces the CSV only when a newer month exists** (no date in the filename). Replaces the old `Wyze_Marketing_Spend_2026YTD.xlsx` (wide `Channel × Category` tab), now unused.
-- `load_finance_actuals()` reads the CSV → `{(channel, category): {(year,month): $}}`; `apply_finance_actuals()` writes the inline **Finance Actuals (Monthly)** row (2nd row of each metric block) at the LAST Mon-Sun week of each month (`last_mon_of_month_col`, same placement as Budgeted), `$ → $k`. Pre-filled `% of budget` formulas (finance ÷ budget, same column) auto-compute. HTML gets matching `finance`-class rows.
+- **Source:** `inputs/finance/Marketing_Spend_2026YTD.csv` — a long table pulled through `DATA_MART.RETAIL_DASHBOARD.MARKETING_SPEND_YTD`. The five-column schema is `PERIOD, CATEGORY, CHANNEL, MDF_SPLIT, SPEND`; the local wrapper is `sql/finance_actuals.sql`. The root launcher replaces the CSV only when a newer month exists.
+- `load_finance_actuals()` keeps the existing `(channel, category)` monthly aggregate and additionally creates `(channel, category, mdf_split)` keys. This preserves all existing Total Marketing values while populating Amazon Non-MDF and MDF separately.
+- `apply_finance_actuals()` writes monthly values at the last complete Mon–Sun column of each month, in `$k`. The month/QTD/YTD percentage formulas all use the corresponding Finance row as numerator. HTML includes the same Amazon split.
 - **Categories** (mapping + sign handled in the query — see `finance_actuals.sql`): `Promos` → Promo row, `Advertising` → Ads row, `Other Mktg` → Other Marketing row.
   - `Promos` = accts 4094 + 4095 + 4098 (contra-revenue, sign-flipped to positive in the query).
   - `Advertising` = acct 6601.
   - `Other Mktg` = accts 6102 + 6107 + 6108 + 6602 + 6604 + 6605 + 6610.
   - **Discounts EXCLUDED** (4092 Early Pay + 4093 Retail Terms — dropped in the query, never folded into Promo).
-  - Channels missing a category (Amazon/Walmart/Other Retail have no dashboard Advertising row) just leave that finance row blank — the loader still loads those keys, but `FINANCE_ROW_MAP` has no row for them so they're not written.
-- **Channel mapping** (`FINANCE_ROW_MAP` / `FINANCE_HTML_MAP` — unchanged; the query emits exactly these 5 channel keys) — 5 sections populate:
-  - `Amazon 1P` → Amazon (Promo R45, Other Mktg R69)
-  - `Walmart` → Walmart (Promo R89, Other Mktg R101)
-  - `Home Depot` → Home Depot (Promo R121, Advertising R127, Other Mktg R133) — **includes Home Depot Canada** (folded in by the query)
-  - `Other Retail` → Other Omni (Promo R153, Other Mktg → "Total marketing" R159) — = Best Buy + Costco + Other Retail
-  - `TTS` → TikTok Shop (Promo R179, Advertising R185, Other Mktg R191) — **includes TikTok Shop Mexico** (folded in by the query)
+  - Amazon `MDF_SPLIT=MDF` is booked inside `Other Mktg`; `Non-MDF` contains all Advertising plus the remaining Other Mktg.
+- **Channel mapping** (`FINANCE_ROW_MAP` / `FINANCE_HTML_MAP`) — 5 sections populate:
+  - `Amazon 1P` → Amazon (Promo R50, Total Marketing R57, Non-MDF R64, MDF R71)
+  - `Walmart` → Walmart (Promo R106, Total Marketing R113)
+  - `Home Depot` → Home Depot (Promo R142, Total Marketing R149) — includes Home Depot Canada
+  - `Other Retail` → Other Omni (Promo R178, Total Marketing R185)
+  - `TTS` → TikTok Shop (Promo R208, Total Marketing R215) — includes TikTok Shop Mexico
   - Excluded by the query: `Amazon 3P`, `DTC` (Wyze.com US/CA), `International`, DTC paid-media platforms (Apple / Google / Roku — already in CAC via Northbeam), and all `*Service` buckets.
 - **Caveat:** HD ad spend is mostly booked under Other Mktg (Channel Marketing 6102), not Advertising 6601 — so HD's finance **Advertising is tiny** (Apr $1.1K) and won't match the weekly `HD_ADS_DAILY` actual (different row). Expected.
 
@@ -198,7 +213,7 @@ the following pipeline sections:
 
 ### 4.1 Excel
 
-Loaded from `inputs/Dashboard_Template.xlsx` template (**208 rows** × 87 cols including 53 weeks of date headers — user added a `% of Target - YTD` row to every sell-in / sell-through / new-customers block 2026-06-18). All row-number constants live in `build_outputs.py` (`CH_ROWS`, `TR_ROWS`, `YTD_PCT_ROWS`, `TARGET_YTD_PCT_ROWS`, `METRIC_BLOCKS`, `PLAN_TARGETS`, `FINANCE_ROW_MAP`); if the template layout changes, update those. Per regeneration:
+Loaded from `inputs/Dashboard_Template.xlsx` template (**225 rows × 57 columns**, including 53 week columns E:BE). Amazon Non-MDF/MDF added 14 rows; all sections from the old row 63 onward shifted by 14. All row-number constants live in `scripts/build_outputs.py`; if the template layout changes, update them together. Per regeneration:
 
 - **E1** is hardcoded `2026-01-04` (Sunday ending Mon-Sun week 2025-12-29); F1.. are `=prev+7`.
 - **Numbers are integer everywhere** (2026-06-18): `#,##0` for $k / # / # ppl, `0%` for percent. No decimals (`apply_number_formats`).
@@ -223,7 +238,10 @@ Wide-format dashboard at `outputs/YYYY-MM-DD/Retail Business Dashboard_YYYY-MM-D
 
 ### 4.3 Generator scripts
 
-Excel + HTML are generated by ad-hoc Python in the conversation history (uses `openpyxl` for Excel). Not currently in repo as standalone script — should be extracted if regenerating becomes routine (see §6 checklist).
+`run_retail_dashboard.py` is the one-command entry point. It queries the two
+read-only dashboard views, maintains the Finance CSV, writes the weekly query
+result to a temporary CSV, and calls `scripts/build_outputs.py` to create Excel
+and HTML under `outputs/YYYY-MM-DD/`.
 
 ---
 
@@ -252,11 +270,12 @@ Things that can be improved later when source data / time available. Loose group
 
 ### 6.1 Needs new data feed (blocked on engineering / finance)
 
-- [x] **Finance monthly marketing actuals** — DONE 2026-06-09; source migrated to NetSuite CSV 2026-06-18 (see §3.9). Now `inputs/finance/Marketing_Spend_2026YTD.csv` (long `PERIOD, CATEGORY, CHANNEL, SPEND` from `DATA_MART.RETAIL_DASHBOARD.MARKETING_SPEND_YTD`), wired via `load_finance_actuals()` / `apply_finance_actuals()`. **5 sections populate** (Amazon, Walmart, HD, Other Omni, TikTok Shop).
+- [x] **Finance monthly marketing actuals** — `inputs/finance/Marketing_Spend_2026YTD.csv` now uses `PERIOD, CATEGORY, CHANNEL, MDF_SPLIT, SPEND` from `DATA_MART.RETAIL_DASHBOARD.MARKETING_SPEND_YTD`. All 5 sections populate, with Amazon also split into Non-MDF and MDF.
 - [x] **Walmart Ads actuals** — DONE 2026-06-22. `walmart_ads_weekly` ← `WALMART_ADS_DAILY` (Walmart Connect, 1P+3P). Wired into dashboard `ads_metrics` (`'Walmart'`) + CAC `ads_cost.sql` / `v_ads_cost_weekly.sql`.
 - [x] **Home Depot Ads actuals** — DONE 2026-06-03. `hd_ads_weekly` ← `HD_ADS_DAILY` (Orange Access manual upload). Feeds the Home Depot ads row.
 - [ ] **Other Omni Ads actuals** — replace plan estimate (BB / Costco / Other Retail ad spend).
-- [ ] **Other Marketing actuals (all channels)** — Amazon MDF, retail in-store displays, retail marketing packages, TTS commissions & samples, affiliate, content/video. Multiple sources, possibly need finance team to provide.
+- [x] **Amazon MDF actuals** — carved out of Amazon Other Mktg by the Finance view's `MDF_SPLIT` and displayed separately while preserving Total Marketing.
+- [ ] **Other Marketing weekly actuals** — retail in-store displays, retail marketing packages, TTS commissions & samples, affiliate, content/video still have no weekly feed.
 - [ ] **Amazon DSP daily pipeline** — replace `AMAZON_DSP_ADS_TEMP` (manual upload, currently ~13 weeks LY + recent CY only). Once daily feed lands, drop the `+1 day` shift and use `DATE_TRUNC('week', date)` like Amazon SP.
 - [x] **Amazon SD NTB** — DONE 2026-06-22. `SD_NTB_1P_US` unioned with `SB_NTB_1P_US` in `amazon_ntb_weekly` (same `ntb_purchases` column). SD earliest 2026-04-17, small magnitude.
 - [ ] **Amazon SP NTB** — no correct data yet; add a third UNION branch in `amazon_ntb_weekly` when it lands.
@@ -267,14 +286,14 @@ Things that can be improved later when source data / time available. Loose group
 
 ### 6.2 Computable in SQL today (just not done yet)
 
-- [ ] **Forecast/Target for New Customers** (R21 Total Retail target, R42 Amazon NTB target) — if marketing team produces a target, add as a target table and join. Today: blank.
-- [x] **Finance Monthly Actuals data integration** — DONE 2026-06-09; source migrated to NetSuite CSV 2026-06-18 (see §3.9). The `% of budget` rows (4th/5th in each block) are pre-filled as `=IFERROR(finance/budget,"")` and auto-compute for all 5 populated sections.
+- [x] **New-Customer target** — flat 52% target is present for Total Retail and Amazon; Amazon's ratio rows remain blank because NTB orders and sell-through units use different denominators.
+- [x] **Finance Monthly Actuals data integration** — the month/QTD/YTD `% of budget` rows use Finance Actuals as numerator and auto-compute for all populated sections, including Amazon Non-MDF/MDF.
 - [ ] **Negative sell-in handling** — HD 2026-03-30 = -$1.13M flagged as anomaly. Decision: leave as-is (correct finance representation), or clip at zero (cleaner visualization), or split returns into a separate "Returns / Credits" row.
 
 ### 6.3 Dashboard polish / process
 
 - [ ] **Promo per channel sister view** — `V_PROMO_SPEND_BY_CHANNEL_WEEKLY` to avoid the 600-line inline duplicated from `promo_spend_all_channels.sql`. Today inline is fine (only one consumer); extract to a view once a 2nd consumer needs per-channel promo.
-- [ ] **Auto-trigger / scheduled regeneration** — schedule weekly run of `build_outputs.py` via cron / GitHub Actions / Snowflake task so user doesn't have to manually invoke. Deferred until data sources stabilize and validation work completes.
+- [ ] **Auto-trigger / scheduled regeneration** — schedule the root `run_retail_dashboard.py` command via cron / GitHub Actions. Deferred until data sources stabilize and validation work completes.
 - [ ] **Devise consistent file naming** — `Retail Business Dashboard_YYYY-MM-DD-HHMM.csv` (SQL output) vs `Retail Business Dashboard_YYYY-MM-DD.xlsx/.html` (dashboard outputs). OK for now but worth aligning.
 - [ ] **Add UI for stakeholders** — currently HTML opens in browser. Could be hosted (S3 / Streamlit / etc.) for shareable URL instead of file attachment.
 - [ ] **Add filter / drilldown** — interactivity to filter weeks / show per-product-line breakdown. Currently the HTML is a static snapshot.
@@ -338,7 +357,6 @@ For a manual fallback, save the weekly Snowflake result anywhere and run:
 |---|---|
 | `sql/weekly_retail_actuals.sql` | Read-only wrapper for `DATA_MART.RETAIL_DASHBOARD.WEEKLY_RETAIL_ACTUALS` |
 | `sql/finance_actuals.sql` | Read-only wrapper for `DATA_MART.RETAIL_DASHBOARD.MARKETING_SPEND_YTD` → Finance CSV |
-| `sql/grant_retail_dashboard_read_role.sql` | Minimal role grants for the two views |
 | `scripts/build_outputs.py` | Build script: CSV → Excel + HTML in one command |
 | `docs/TECHNICAL_REFERENCE.md` | This doc |
 | `inputs/finance/Marketing_Spend_2026YTD.csv` | Finance Actuals (Monthly) source — replace in place ~monthly |
@@ -399,3 +417,4 @@ For a manual fallback, save the weekly Snowflake result anywhere and run:
 | 2026-06-18 | **Finance source migrated from Excel → NetSuite CSV.** Now `inputs/finance/Marketing_Spend_2026YTD.csv` (long `PERIOD, CATEGORY, CHANNEL, SPEND` from `DATA_MART.FINANCE.NETSUITE_CPAM_DETAILS`, pre-aggregated by new `sql/finance_actuals.sql`). `load_finance_actuals()` rewritten to read the long CSV via `csv.DictReader` (replaces the openpyxl wide-tab reader). The query owns category/channel/sign logic: Discounts (4092/4093) excluded, Promo (4094/4095/4098) sign-flipped positive, and — corrected from the 2026-06-10 Excel — **HD Canada folds into Home Depot** + **TikTok Shop Mexico folds into TTS** (own sections, not International). `FINANCE_ROW_MAP` / `FINANCE_HTML_MAP` unchanged (query emits the same 5 channel keys). Verified: 60 finance cells written, values match ($k-scaled). Old `Wyze_Marketing_Spend_2026YTD.xlsx` now unused. |
 | 2026-08-13 | Standalone handoff layout introduced: root launcher/config only; working inputs under `inputs/`; SQL under `sql/`; builder under `scripts/`; dated deliverables under `outputs/`; technical documentation consolidated here. All runtime paths updated and regression-tested. |
 | 2026-08-13 | Local Snowflake queries switched from direct underlying-object access to two dedicated views: `WEEKLY_RETAIL_ACTUALS` and `MARKETING_SPEND_YTD` in `DATA_MART.RETAIL_DASHBOARD`. Consumer role reduced to warehouse/database/schema `USAGE` plus `SELECT` on those views. |
+| 2026-08-25 | Amazon Non-MDF/MDF split synchronized: template expanded to 225 rows; builder remapped all shifted sections, added split Finance keys and plan buckets, and updated Excel/HTML. Finance schema now includes `MDF_SPLIT`; Total Marketing remains backward-compatible and reconciles to Non-MDF + MDF. |
